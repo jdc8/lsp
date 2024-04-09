@@ -26,7 +26,7 @@ proc didClose {uri} {
     unset -nocomplain textDocuments($uri)
 }
 
-proc definition {uri line character} {
+proc definition {id uri line character} {
     set d [dict create uri file:///home/josd/Development/src/lsp/def.tcl \
                startline $line \
                startcharacter $character \
@@ -35,11 +35,11 @@ proc definition {uri line character} {
     return $d
 }
 
-proc hover {uri line character} {
+proc hover {id uri line character} {
     return "hover test for $uri @ $line.$character"
 }
 
-proc document_link {uri} {
+proc document_link {id uri} {
     global textDocuments
     set urifnm [string range $uri 7 end]
     set uridir [file dirname $urifnm]
@@ -115,6 +115,10 @@ proc document_link {uri} {
     return $links
 }
 
+proc cancel {id} {
+    puts stderr "cancelling request $id"
+}
+
 set lsp_server::handler(textDocument/didOpen) didOpen
 set lsp_server::handler(textDocument/didChange) didChange
 set lsp_server::handler(textDocument/didSave) didSave
@@ -122,6 +126,7 @@ set lsp_server::handler(textDocument/didClose) didClose
 set lsp_server::handler(textDocument/hover) hover
 set lsp_server::handler(textDocument/definition) definition
 set lsp_server::handler(textDocument/documentLink) document_link
+set lsp_server::handler(cancelRequest) cancel
 
 lsp_server::start
 

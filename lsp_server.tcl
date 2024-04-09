@@ -32,16 +32,18 @@ namespace eval lsp_server {
 
     proc errorResponse {requestdict errorcode errormsg} {
         variable lsperror
-        set responsejson [json::write object \
-                              jsonrpc [json::write string "2.0"] \
-                              id [dict get $requestdict id] \
-                              error [json::write object \
-                                         co [json::write string $lsperror($errorcode)] \
-                                         message [json::write string $errormsg] \
-                                        ] \
-                             ]
-        debugPuts "process [dict get $requestdict method] error response json = $responsejson" 1
-        putData $responsejson
+        if {[dict exists $requestdict id]} {
+            set responsejson [json::write object \
+                                  jsonrpc [json::write string "2.0"] \
+                                  id [dict get $requestdict id] \
+                                  error [json::write object \
+                                             co [json::write string $lsperror($errorcode)] \
+                                             message [json::write string $errormsg] \
+                                            ] \
+                                 ]
+            debugPuts "process [dict get $requestdict method] error response json = $responsejson" 1
+            putData $responsejson
+        }
     }
 
     proc initializeRequest {requestdict} {
@@ -87,7 +89,9 @@ namespace eval lsp_server {
         variable handler
         debugPuts "process textDocument/didOpen notification" 1
         if {[info exists handler(textDocument/didOpen)]} {
-            uplevel #0 [list {*}$handler(textDocument/didOpen) [dict get $requestdict params textDocument uri] [dict get $requestdict params textDocument text]]
+            try {
+                uplevel #0 [list {*}$handler(textDocument/didOpen) [dict get $requestdict params textDocument uri] [dict get $requestdict params textDocument text]]
+            }
         }
     }
 
@@ -96,7 +100,9 @@ namespace eval lsp_server {
         debugPuts "process textDocument/didOpen notification" 1
         if {[info exists handler(textDocument/didChange)]} {
             # Assume first content change item has full text
-            uplevel #0 [list {*}$handler(textDocument/didChange) [dict get $requestdict params textDocument uri] [dict get [lindex [dict get $requestdict params contentChanges] 0] text]]
+            try {
+                uplevel #0 [list {*}$handler(textDocument/didChange) [dict get $requestdict params textDocument uri] [dict get [lindex [dict get $requestdict params contentChanges] 0] text]]
+            }
         }
     }
 
@@ -104,15 +110,19 @@ namespace eval lsp_server {
         variable handler
         debugPuts "process textDocument/didSave notification" 1
         if {[info exists handler(textDocument/didSave)]} {
-            uplevel #0 [list {*}$handler(textDocument/didSave) [dict get $requestdict params textDocument uri]]
+            try {
+                uplevel #0 [list {*}$handler(textDocument/didSave) [dict get $requestdict params textDocument uri]]
+            }
         }
     }
 
     proc textDocumentDidCloseRequest {requestdict} {
         variable handler
         debugPuts "process textDocument/didClose notification" 1
-        if {[info exists handler(textDocument/didChange)]} {
-            uplevel #0 [list {*}$handler(textDocument/didChange) [dict get $requestdict params textDocument uri]]
+        if {[info exists handler(textDocument/didClose)]} {
+            try {
+                uplevel #0 [list {*}$handler(textDocument/didClose) [dict get $requestdict params textDocument uri]]
+            }
         }
     }
 
@@ -124,7 +134,7 @@ namespace eval lsp_server {
                 set uri [dict get $requestdict params textDocument uri]
                 set line [dict get $requestdict params position line]
                 set character [dict get $requestdict params position character]
-                set hovertext [uplevel #0 [list {*}$handler(textDocument/hover) $uri $line $character]]
+                set hovertext [uplevel #0 [list {*}$handler(textDocument/hover) [dict get $requestdict id] $uri $line $character]]
                 set responsejson [json::write object \
                                       jsonrpc [json::write string "2.0"] \
                                       id [dict get $requestdict id] \
@@ -148,7 +158,7 @@ namespace eval lsp_server {
                 set uri [dict get $requestdict params textDocument uri]
                 set line [dict get $requestdict params position line]
                 set character [dict get $requestdict params position character]
-                set definition [uplevel #0 [list {*}$handler(textDocument/definition) $uri $line $character]]
+                set definition [uplevel #0 [list {*}$handler(textDocument/definition) [dict get $requestdict id] $uri $line $character]]
                 set responsejson [json::write object \
                                       jsonrpc [json::write string "2.0"] \
                                       id [dict get $requestdict id] \
@@ -180,7 +190,7 @@ namespace eval lsp_server {
         if {[info exists handler(textDocument/documentLink)]} {
             try {
                 set uri [dict get $requestdict params textDocument uri]
-                set links [uplevel #0 [list {*}$handler(textDocument/documentLink) $uri]]
+                set links [uplevel #0 [list {*}$handler(textDocument/documentLink) [dict get $requestdict id] $uri]]
                 set json_links {}
                 foreach d $links {
                     lappend json_links [json::write object \
@@ -217,7 +227,7 @@ namespace eval lsp_server {
         debugPuts "process shutdown request" 1
         if {[info exists handler(shutdown)]} {
             try {
-                [uplevel #0 [list {*}$handler(shutdown)]]
+                [uplevel #0 [list {*}$handler(shutdown) [dict get $requestdict id]]]
            } on error {
                 errorResponse $requestdict InternalError $msg
             }
@@ -234,6 +244,16 @@ namespace eval lsp_server {
     proc exitNotification {responsejson} {
         debugPuts "process exit notification" 1
         exit
+    }
+
+    proc cancelNotification {requestdict} {
+        variable handler
+        debugPuts "process cancel notification" 1
+        if {[info exists handler(cancelRequest)]} {
+            try {
+                [uplevel #0 [list {*}$handler(cancelRequest) [dict get $requestdict params id]]]
+            }
+        }
     }
 
     proc processRequest {} {
@@ -263,6 +283,7 @@ namespace eval lsp_server {
             textDocument/documentLink { textDocumentDocumentLinkRequest $requestdict }
             shutdown { shutdownRequest $requestdict }
             exit { exitNotification $requestdict }
+            \$/cancelRequest { cancelNotification $requestdict }
             default {
                 errorResponse $requestdict InvalidRequest "not processing unknown request/notification $requestmethod"
             }
