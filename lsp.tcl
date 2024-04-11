@@ -125,9 +125,7 @@ set lsp_server::handler(textDocument/didSave) didSave
 set lsp_server::handler(textDocument/didClose) didClose
 set lsp_server::handler(textDocument/hover) hover
 #set lsp_server::handler(textDocument/definition) definition
-#set lsp_server::handler(textDocument/documentLink) document_link
+set lsp_server::handler(textDocument/documentLink) document_link
 set lsp_server::handler(cancelRequest) cancel
 
 lsp_server::start
-
-vwait forever

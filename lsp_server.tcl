@@ -12,7 +12,7 @@ namespace eval lsp_server {
 
     variable requestdata ""
     variable requestlength 0
-    variable contentdata ""
+    variable pendingrequests {}
     variable debuglevel 1
     variable initialized 0
     set shuttingDown 0
@@ -261,15 +261,12 @@ namespace eval lsp_server {
         }
     }
 
-    proc processRequest {} {
-        variable contentdata
+    proc processRequest {requestdict} {
         variable lsptclname
         variable lsptclversion
         variable handler
         variable initialized
         variable shuttingDown
-        debugPuts "process request = $contentdata" 2
-        set requestdict [json::json2dict $contentdata]
         debugPuts "process json requestdict = $requestdict"
         set requestmethod [dict get $requestdict method]
         set requestid [expr {[dict exists $requestdict id] ? [dict get $requestdict id] : -1}]
@@ -296,6 +293,15 @@ namespace eval lsp_server {
         }
     }
 
+    proc processNextRequest {} {
+        variable pendingrequests
+        debugPuts "processNextRequest [llength $pendingrequests] pending." 1
+        if {[llength $pendingrequests]} {
+            set pendingrequests [lassign $pendingrequests requestdict]
+            processRequest $requestdict
+        }
+    }
+
     proc putData {content} {
         set msg "Content-Length: [string length $content]\r\n\r\n$content"
         debugPuts "put data: msg=$msg"
@@ -306,7 +312,7 @@ namespace eval lsp_server {
     proc _getData {} {
         variable requestdata
         variable requestlength
-        variable contentdata
+        variable pendingrequests
         set data [read stdin]
         debugPuts "data read from stdin: size=[string length $data] data='$data'"
         if {[eof stdin]} {
@@ -314,33 +320,35 @@ namespace eval lsp_server {
             fileevent stdin readable {}
         }
         append requestdata $data
-        debugPuts "requestdata='$requestdata'"
-        # Look for request length
-        if {[regexp {^Content-Length: ([[:digit:]]+)} $requestdata - requestlength]} {
-            debugPuts "request length found: $requestlength"
-            # Is full request received already?
-            set idx1 [string first "\r\n" $requestdata]
-            debugPuts "first separator found at $idx1"
-            set idx2 [string first "\r\n" $requestdata [expr {$idx1 + 2}]]
-            if {$idx2 > $idx1} {
-                debugPuts "second separator found at $idx2"
-                set receivedlength [expr {[string length $requestdata] - $idx2 - 2}]
-                debugPuts "received content length = $receivedlength"
-                if {$receivedlength >= $requestlength} {
-                    debugPuts "full content received"
-                    set contentdata [string range $requestdata [expr {$idx2 + 2}] [expr {$idx2 + 2 + $requestlength - 1}]]
-                    debugPuts "contentdata = $contentdata"
-                    set requestdata [string range $requestdata [expr {$idx2 + 2 + $requestlength}] end]
-                    debugPuts "requestdata = $requestdata"
-                    processRequest
+        while {1} {
+            debugPuts "requestdata='$requestdata'"
+            # Look for request length
+            if {[regexp {^Content-Length: ([[:digit:]]+)} $requestdata - requestlength]} {
+                debugPuts "request length found: $requestlength"
+                # Is full request received already?
+                set idx1 [string first "\r\n" $requestdata]
+                debugPuts "first separator found at $idx1"
+                set idx2 [string first "\r\n" $requestdata [expr {$idx1 + 2}]]
+                if {$idx2 > $idx1} {
+                    debugPuts "second separator found at $idx2"
+                    set receivedlength [expr {[string length $requestdata] - $idx2 - 2}]
+                    debugPuts "received content length = $receivedlength"
+                    if {$receivedlength >= $requestlength} {
+                        debugPuts "full content received"
+                        set contentdata [string range $requestdata [expr {$idx2 + 2}] [expr {$idx2 + 2 + $requestlength - 1}]]
+                        debugPuts "contentdata = $contentdata"
+                        set requestdata [string range $requestdata [expr {$idx2 + 2 + $requestlength}] end]
+                        debugPuts "requestdata = $requestdata"
+                        lappend pendingrequests [json::json2dict $contentdata]
+                    }
+                } else {
+                    debugPuts "second separator not found yet"
+                    return
                 }
             } else {
-                debugPuts "second separator not found yet"
+                debugPuts "request length not found"
                 return
             }
-        } else {
-            debugPuts "request length not found"
-            return
         }
     }
 
@@ -351,8 +359,15 @@ namespace eval lsp_server {
     }
 
     proc start {} {
+        variable pendingrequests
         fconfigure stdin -blocking 0 -encoding binary -translation binary
         fileevent stdin readable [list lsp_server::getData]
         fconfigure stdout -blocking 0 -encoding binary -translation binary
+        while 1 {
+            vwait lsp_server::pendingrequests
+            while {[llength $pendingrequests]} {
+                processNextRequest
+            }
+        }
     }
 }
