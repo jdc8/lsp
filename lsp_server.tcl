@@ -41,7 +41,8 @@ namespace eval lsp_server {
                                              message [json::write string $errormsg] \
                                             ] \
                                  ]
-            debugPuts "process [dict get $requestdict method] error response json = $responsejson" 1
+            debugPuts "process [dict get $requestdict method] error response" 1
+            debugPuts "process [dict get $requestdict method] error response json = $responsejson" 2
             putData $responsejson
         }
     }
@@ -53,10 +54,10 @@ namespace eval lsp_server {
         debugPuts "process initialize request" 1
         # As an example extract client name and version
         if {[dict exists $requestdict params clientInfo name]} {
-            debugPuts "process initialize clientInfo name = '[dict get $requestdict params clientInfo name]'" 1
+            debugPuts "process initialize clientInfo name = '[dict get $requestdict params clientInfo name]'" 2
         }
         if {[dict exists $requestdict params clientInfo version]} {
-            debugPuts "process initialize clientInfo version = '[dict get $requestdict params clientInfo version]'" 1
+            debugPuts "process initialize clientInfo version = '[dict get $requestdict params clientInfo version]'" 2
         }
         set responsejson [json::write object \
                               jsonrpc [json::write string "2.0"] \
@@ -74,7 +75,7 @@ namespace eval lsp_server {
                                                            ] \
                                          ] \
                              ]
-        debugPuts "process initialize response json = $responsejson" 1
+        debugPuts "process initialize response json = $responsejson" 2
         putData $responsejson
     }
 
@@ -142,7 +143,8 @@ namespace eval lsp_server {
                                                   contents [json::write string $hovertext] \
                                                  ] \
                                      ]
-                debugPuts "process textDocument/hover response json = $responsejson" 1
+                debugPuts "process textDocument/hover response id = [dict get $requestdict id]" 1
+                debugPuts "process textDocument/hover response json = $responsejson" 2
                 putData $responsejson
             } on error msg {
                 errorResponse $requestdict InternalError $msg
@@ -176,7 +178,8 @@ namespace eval lsp_server {
                                                             ] \
                                                  ] \
                                      ]
-                debugPuts "process textDocument/definition response json = $responsejson" 1
+                debugPuts "process textDocument/definition response id = [dict get $requestdict id]" 1
+                debugPuts "process textDocument/definition response json = $responsejson" 2
                 putData $responsejson
             } on error msg {
                 errorResponse $requestdict InternalError $msg
@@ -213,7 +216,8 @@ namespace eval lsp_server {
                                       id [dict get $requestdict id] \
                                       result [json::write array {*}$json_links] \
                                      ]
-                debugPuts "process textDocument/documentLink response json = $responsejson" 1
+                debugPuts "process textDocument/documentLink response id = [dict get $requestdict id]" 1
+                debugPuts "process textDocument/documentLink response json = $responsejson" 2
                 putData $responsejson
             } on error msg {
                 errorResponse $requestdict InternalError $msg
@@ -227,7 +231,7 @@ namespace eval lsp_server {
         debugPuts "process shutdown request" 1
         if {[info exists handler(shutdown)]} {
             try {
-                [uplevel #0 [list {*}$handler(shutdown) [dict get $requestdict id]]]
+                uplevel #0 [list {*}$handler(shutdown) [dict get $requestdict id]]
            } on error {
                 errorResponse $requestdict InternalError $msg
             }
@@ -237,7 +241,8 @@ namespace eval lsp_server {
                               jsonrpc [json::write string "2.0"] \
                               id [dict get $requestdict id] \
                              ]
-        debugPuts "process textDocument/shutdown response json = $responsejson" 1
+        debugPuts "process textDocument/shutdown response id = [dict get $requestdict id]" 1
+        debugPuts "process textDocument/shutdown response json = $responsejson" 2
         putData $responsejson
     }
 
@@ -251,7 +256,7 @@ namespace eval lsp_server {
         debugPuts "process cancel notification" 1
         if {[info exists handler(cancelRequest)]} {
             try {
-                [uplevel #0 [list {*}$handler(cancelRequest) [dict get $requestdict params id]]]
+                uplevel #0 [list {*}$handler(cancelRequest) [dict get $requestdict params id]]
             }
         }
     }
@@ -263,10 +268,12 @@ namespace eval lsp_server {
         variable handler
         variable initialized
         variable shuttingDown
-        debugPuts "process request = $contentdata" 1
+        debugPuts "process request = $contentdata" 2
         set requestdict [json::json2dict $contentdata]
-        debugPuts "process json requestdict = $requestdict" 1
+        debugPuts "process json requestdict = $requestdict"
         set requestmethod [dict get $requestdict method]
+        set requestid [expr {[dict exists $requestdict id] ? [dict get $requestdict id] : -1}]
+        debugPuts "processes method = $requestmethod id = $requestid" 1
         if {!$initialized && $requestmethod ni {initialize initialized}} {
             errorResponse $requestdict serverNotInitialized "The server is not initialized yet."
             return
@@ -283,7 +290,6 @@ namespace eval lsp_server {
             textDocument/documentLink { textDocumentDocumentLinkRequest $requestdict }
             shutdown { shutdownRequest $requestdict }
             exit { exitNotification $requestdict }
-            \$/cancelRequest { cancelNotification $requestdict }
             default {
                 errorResponse $requestdict InvalidRequest "not processing unknown request/notification $requestmethod"
             }
@@ -292,12 +298,12 @@ namespace eval lsp_server {
 
     proc putData {content} {
         set msg "Content-Length: [string length $content]\r\n\r\n$content"
-        debugPuts "put dats: msg=$msg"
+        debugPuts "put data: msg=$msg"
         puts -nonewline stdout $msg
         flush stdout
     }
 
-    proc getData {} {
+    proc _getData {} {
         variable requestdata
         variable requestlength
         variable contentdata
@@ -326,9 +332,7 @@ namespace eval lsp_server {
                     debugPuts "contentdata = $contentdata"
                     set requestdata [string range $requestdata [expr {$idx2 + 2 + $requestlength}] end]
                     debugPuts "requestdata = $requestdata"
-                    fileevent stdin readable {}
                     processRequest
-                    fileevent stdin readable [list lsp_server::getData]
                 }
             } else {
                 debugPuts "second separator not found yet"
@@ -338,6 +342,12 @@ namespace eval lsp_server {
             debugPuts "request length not found"
             return
         }
+    }
+
+    proc getData {} {
+        fileevent stdin readable {}
+        _getData
+        fileevent stdin readable [list lsp_server::getData]
     }
 
     proc start {} {

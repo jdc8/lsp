@@ -36,7 +36,7 @@ proc definition {id uri line character} {
 }
 
 proc hover {id uri line character} {
-    return "hover test for $uri @ $line.$character"
+    return "hover test @ $line.$character"
 }
 
 proc document_link {id uri} {
@@ -124,8 +124,8 @@ set lsp_server::handler(textDocument/didChange) didChange
 set lsp_server::handler(textDocument/didSave) didSave
 set lsp_server::handler(textDocument/didClose) didClose
 set lsp_server::handler(textDocument/hover) hover
-set lsp_server::handler(textDocument/definition) definition
-set lsp_server::handler(textDocument/documentLink) document_link
+#set lsp_server::handler(textDocument/definition) definition
+#set lsp_server::handler(textDocument/documentLink) document_link
 set lsp_server::handler(cancelRequest) cancel
 
 lsp_server::start
