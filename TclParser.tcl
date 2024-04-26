@@ -1,3 +1,8 @@
+set TclParserStandAlone 0
+
+if {$TclParserStandAlone} {
+    lappend auto_path [file dirname [info script]] [file join [file dirname [info script]] lib]
+}
 
 package require critcl-tclp
 package provide TclParser 0.1
@@ -74,7 +79,34 @@ oo::class create TclParser {
         return [string range $script $offset [expr {$offset + $size - 1}]]
     }
 
-    #
+    # Split token list and group components. Parse as a non-nested list of tokens.
+    method GroupTokens {tokens} {
+        set groups {}
+        for {set i 0} {$i < [llength $tokens]} {incr i} {
+            set t [lindex $tokens $i]
+            set numComponents [dict get $t numComponents]
+            lappend groups [list $t {*}[lrange $tokens [expr {$i+1}] [expr {$i + $numComponents}]]]
+            incr i $numComponents
+        }
+        return $groups
+    }
+
+    # Look for SIMPLE_WORD + TEXT or TEXT
+    method GetSimpleWordToken {tokens} {
+        set token [lindex $tokens 0]
+        if {[dict get $token type] eq "TEXT"} {
+            return $token
+        }
+        if {[dict get $token type] eq "SIMPLE_WORD" && [dict get $token numComponents] == 1} {
+            set token [lindex $tokens 1]
+            if {[dict get $token type] eq "TEXT"} {
+                return $token
+            }
+        }
+        return ""
+    }
+
+    # Parse the script
     method ParseScript {} {
         set commandOffset 0
         while {$commandOffset < [string length $script]} {
@@ -85,18 +117,32 @@ oo::class create TclParser {
                 set commentPositionEnd [my LineChar [expr {[dict get $d commentStart] + [dict get $d commentSize]}]]
                 lappend commentLocations [dict create start $commentPositiomStart end $commentPositionEnd]
             }
+            puts "Tokenlist:"
+            puts [dict get $d tokens]
+            set groupedTokens [my GroupTokens [dict get $d tokens]]
+            puts "Grouped tokens:"
+            puts [join $groupedTokens \n]
             # Command name if first token
-            set commandNameToken [lindex [dict get $d tokens] 0]
-            set commandName [my Extract [dict get $commandNameToken start] [dict get $commandNameToken size]]
-            switch -exact -- $commandName {
-                "proc" {
-                    # Proc name is second token
-                    set commandNameComponentCount [dict get $commandNameToken numComponents]
-                    set procNameToken [lindex [dict get $d tokens] [expr {$commandNameComponentCount + 1}]]
-                    set procName [my Extract [dict get $procNameToken start] [dict get $procNameToken size]]
-                    set procPositionStart [my LineChar [dict get $procNameToken start]]
-                    set procPositionEnd [my LineChar [expr {[dict get $procNameToken start] + [dict get $procNameToken size]}]]
-                    lappend procLocations [dict create name $procName start $procPositionStart end $procPositionEnd]
+            set commandNameToken [my GetSimpleWordToken [lindex $groupedTokens 0]]
+            if {$commandNameToken ne ""} {
+                set commandName [my Extract [dict get $commandNameToken start] [dict get $commandNameToken size]]
+                switch -exact -- $commandName {
+                    "proc" {
+                        # Proc name is second token
+                        set procNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
+                        if {$procNameToken ne ""} {
+                            set procName [my Extract [dict get $procNameToken start] [dict get $procNameToken size]]
+                            set procPositionStart [my LineChar [dict get $procNameToken start]]
+                            set procPositionEnd [my LineChar [expr {[dict get $procNameToken start] + [dict get $procNameToken size]}]]
+                            # Proc arguments are in third token
+                            set arguments ""
+                            set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
+                            if {$argumentsToken ne ""} {
+                                set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
+                            }
+                            lappend procLocations [dict create name $procName start $procPositionStart end $procPositionEnd arguments $arguments]
+                        }
+                    }
                 }
             }
             # Continue with next command
@@ -147,7 +193,8 @@ oo::class create TclParser {
     }
 }
 
-if 0 {
+if {$TclParserStandAlone} {
+
     set parsers {}
     foreach fnm $argv {
         lappend parsers [set p [TclParser new fileName $fnm]]
@@ -166,3 +213,5 @@ if 0 {
 
     exit
 }
+
+unset -nocomplain TclParserStandAlone

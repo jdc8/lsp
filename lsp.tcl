@@ -59,7 +59,11 @@ proc hover {id uri line character} {
     if {[info exists textDocuments($uri)]} {
         set pd [$textDocuments($uri) getDefinition $line $character]
         if {[string length $pd]} {
-            return "proc defined in [uri::join scheme file path [$textDocuments($uri) cget fileName]] at position [dict get $pd start line].[dict get $pd start character]"
+            set result "proc defined in [uri::join scheme file path [$textDocuments($uri) cget fileName]] at position [dict get $pd start line].[dict get $pd start character]"
+            if {[dict get $pd arguments] ne ""} {
+                append result " with these arguments: [dict get $pd arguments]"
+            }
+            return $result
         }
     }
     return "hover test @ $line.$character"
