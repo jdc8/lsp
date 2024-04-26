@@ -287,6 +287,7 @@ namespace eval lsp_server {
             textDocument/documentLink { textDocumentDocumentLinkRequest $requestdict }
             shutdown { shutdownRequest $requestdict }
             exit { exitNotification $requestdict }
+            \$/cancelRequest { cancelNotification $requestdict }
             default {
                 errorResponse $requestdict InvalidRequest "not processing unknown request/notification $requestmethod"
             }
@@ -297,8 +298,22 @@ namespace eval lsp_server {
         variable pendingrequests
         debugPuts "processNextRequest [llength $pendingrequests] pending." 1
         if {[llength $pendingrequests]} {
-            set pendingrequests [lassign $pendingrequests requestdict]
-            processRequest $requestdict
+            set pendingrequests [lassign $pendingrequests currentrequestdict]
+            set currentrequestmethod [dict get $currentrequestdict method]
+            set currentrequestid [expr {[dict exists $currentrequestdict id] ? [dict get $currentrequestdict id] : -1}]
+            # Check if request was cancelled
+            foreach futurerequestdict $pendingrequests {
+                set futurerequestmethod [dict get $futurerequestdict method]
+                if {$futurerequestmethod eq "\$/cancelRequest"} {
+                    set idtocancel [dict get $requestdict params id]
+                    if {$idtocancel == $currentrequestid} {
+                        # Return cancel response
+                        # Remove cancel request
+                        return
+                    }
+                }
+            }
+            processRequest $currentrequestdict
         }
     }
 
