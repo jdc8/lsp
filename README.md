@@ -1,3 +1,9 @@
+Build the critcl wrapper for Tcl_ParseCommand using make:
+
+ % make
+ 
+This create the wrapper as a package in directory lib.
+
 Start lsp.tcl from emacs:
 
  (with-eval-after-load 'lsp-mode
