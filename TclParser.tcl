@@ -1,4 +1,4 @@
-set TclParserStandAlone 0
+set TclParserStandAlone 1
 
 if {$TclParserStandAlone} {
     lappend auto_path [file dirname [info script]] [file join [file dirname [info script]] lib]
@@ -93,6 +93,21 @@ oo::class create TclParser {
             incr i $numComponents
         }
         return $groups
+    }
+
+    # Concat tokens without back slash tokens
+    method ConcatWithoutBS {tokens} {
+        set bsl {}
+        set result ""
+        foreach itoken $tokens {
+            if {[dict get $itoken type] eq "BS"} {
+                puts "BS @ [string length $result]: $itoken"
+                lappend bsl [dict create offset [string length $result] bsToken $itoken]
+            } else {
+                append result [my Extract [dict get $itoken start] [dict get $itoken size]]
+            }
+        }
+        return $result
     }
 
     # Look for SIMPLE_WORD + TEXT or TEXT or WORD
@@ -199,23 +214,55 @@ oo::class create TclParser {
                                         if {$classBodyToken ne ""} {
                                             set classBodyPositionStart [my LineChar [dict get $classBodyToken start]]
                                             set classBody [my Extract [dict get $classBodyToken start] [dict get $classBodyToken size]]
+                                            # If body is a bracd string, remove the braces and replace any back slashes in it.
+                                            # That will cause the line number to be off.
+                                            # TODO: adjust line numbers again
+                                            if {[string index $classBody 0] eq "\{"} {
+                                                set bd [tclp braces $script [dict get $classBodyToken start]]
+                                                set pb [my ConcatWithoutBS [dict get $bd tokens]]
+                                                set classBody $pb
+                                            } elseif {[string index $classBody 0] eq "\""} {
+                                                set bd [tclp quotedString $script [dict get $classBodyToken start]]
+                                                set pb [my ConcatWithoutBS [dict get $bd tokens]]
+                                                set classBody $pb
+                                            }
+                                            # Now parse the body by calling the parser recursively
                                             set p [TclParser new script $classBody]
                                             $p analyse
                                             $p print stdout 3
                                             # Get info from body
                                             foreach cl [$p cget commentLocations] {
-                                                lappend adjustedCommentLocations [dict create start [dict create line [expr {[dict get $cl start line] + [dict get $classBodyPositionStart line]}] character [dict get $cl start character]] end [dict create line [expr {[dict get $cl end line] + [dict get $classBodyPositionStart line]}] character [dict get $cl end character]]]
+                                                lappend adjustedCommentLocations \
+                                                    [dict create \
+                                                         start [dict create line [expr {[dict get $cl start line] + [dict get $classBodyPositionStart line]}] character [dict get $cl start character]] \
+                                                         end [dict create line [expr {[dict get $cl end line] + [dict get $classBodyPositionStart line]}] character [dict get $cl end character]]]
                                             }
                                             foreach cl [$p cget constructorLocations] {
-                                                lappend adjustedConstructorLocations [dict create name constructor start [dict create line [expr {[dict get $cl start line] + [dict get $classBodyPositionStart line]}] character [dict get $cl start character]] end [dict create line [expr {[dict get $cl end line] + [dict get $classBodyPositionStart line]}] character [dict get $cl end character]] arguments [dict get $cl arguments]]
+                                                lappend adjustedConstructorLocations \
+                                                    [dict create \
+                                                         name constructor \
+                                                         start [dict create line [expr {[dict get $cl start line] + [dict get $classBodyPositionStart line]}] character [dict get $cl start character]] \
+                                                         end [dict create line [expr {[dict get $cl end line] + [dict get $classBodyPositionStart line]}] character [dict get $cl end character]] \
+                                                         arguments [dict get $cl arguments]]
                                             }
                                             foreach ml [$p cget methodLocations] {
-                                                 lappend adjustedMethodLocations [dict create name  [dict get $ml name] start [dict create line [expr {[dict get $ml start line] + [dict get $classBodyPositionStart line]}] character [dict get $ml start character]] end [dict create line [expr {[dict get $ml end line] + [dict get $classBodyPositionStart line]}] character [dict get $ml end character]] arguments [dict get $ml arguments]]
+                                                lappend adjustedMethodLocations \
+                                                    [dict create name \
+                                                         [dict get $ml name] \
+                                                         start [dict create line [expr {[dict get $ml start line] + [dict get $classBodyPositionStart line]}] character [dict get $ml start character]] \
+                                                         end [dict create line [expr {[dict get $ml end line] + [dict get $classBodyPositionStart line]}] character [dict get $ml end character]] \
+                                                         arguments [dict get $ml arguments]]
                                             }
                                             $p destroy
                                         }
                                         lappend commentLocations {*}$adjustedCommentLocations
-                                        lappend classLocations [dict create name $className start $classPositionStart end $classPositionEnd constructors $adjustedConstructorLocations methods $adjustedMethodLocations]
+                                        lappend classLocations \
+                                            [dict create \
+                                                 name $className \
+                                                 start $classPositionStart \
+                                                 end $classPositionEnd \
+                                                 constructors $adjustedConstructorLocations \
+                                                 methods $adjustedMethodLocations]
                                     }
                                 }
                             }
