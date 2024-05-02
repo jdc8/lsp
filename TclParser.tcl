@@ -107,7 +107,18 @@ oo::class create TclParser {
                 append result [my Extract [dict get $itoken start] [dict get $itoken size]]
             }
         }
-        return $result
+        return [dict create string $result bsPositions $bsl]
+    }
+
+    # Adjust position when taking back slash tokens into account
+    method AdjustForBackslashTokens {start bsPositions} {
+        set bsAdjustedStart $start
+        foreach bsPosition $bsPositions {
+            if {$start > [dict get $bsPosition offset]} {
+                incr bsAdjustedStart [dict get $bsPosition bsToken size]
+            }
+        }
+        return $bsAdjustedStart
     }
 
     # Look for SIMPLE_WORD + TEXT or TEXT or WORD
@@ -135,9 +146,7 @@ oo::class create TclParser {
             set d [tclp command $script $commandOffset]
             # Look for comments
             if {[dict get $d commentSize]} {
-                set commentPositiomStart [my LineChar [dict get $d commentStart]]
-                set commentPositionEnd [my LineChar [expr {[dict get $d commentStart] + [dict get $d commentSize]}]]
-                lappend commentLocations [dict create start $commentPositiomStart end $commentPositionEnd]
+                lappend commentLocations [dict create start [dict get $d commandStart] size [dict get $d commentSize]]
             }
             puts "Tokenlist:"
             puts [dict get $d tokens]
@@ -155,15 +164,13 @@ oo::class create TclParser {
                         set procNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
                         if {$procNameToken ne ""} {
                             set procName [my Extract [dict get $procNameToken start] [dict get $procNameToken size]]
-                            set procPositionStart [my LineChar [dict get $procNameToken start]]
-                            set procPositionEnd [my LineChar [expr {[dict get $procNameToken start] + [dict get $procNameToken size]}]]
                             # Proc arguments are in third token
                             set arguments ""
                             set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
                             if {$argumentsToken ne ""} {
                                 set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
                             }
-                            lappend procLocations [dict create name $procName start $procPositionStart end $procPositionEnd arguments $arguments]
+                            lappend procLocations [dict create name $procName start [dict get $procNameToken start] size [dict get $procNameToken size] arguments $arguments]
                         }
                     }
                     "method" - "::method" {
@@ -171,27 +178,23 @@ oo::class create TclParser {
                         set methodNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
                         if {$methodNameToken ne ""} {
                             set methodName [my Extract [dict get $methodNameToken start] [dict get $methodNameToken size]]
-                            set methodPositionStart [my LineChar [dict get $methodNameToken start]]
-                            set methodPositionEnd [my LineChar [expr {[dict get $methodNameToken start] + [dict get $methodNameToken size]}]]
                             # Method arguments are in third token
                             set arguments ""
                             set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
                             if {$argumentsToken ne ""} {
                                 set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
                             }
-                            lappend methodLocations [dict create name $methodName start $methodPositionStart end $methodPositionEnd arguments $arguments]
+                            lappend methodLocations [dict create name $methodName start [dict get $methodNameToken start] size [dict get $methodNameToken size] arguments $arguments]
                         }
                     }
                     "constructor" - "::constructor" {
-                        set constructorPositionStart [my LineChar [dict get $commandNameToken start]]
-                        set constructorPositionEnd [my LineChar [expr {[dict get $commandNameToken start] + [dict get $commandNameToken size]}]]
                         # Constructor arguments are in second token
                         set arguments ""
                         set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
                         if {$argumentsToken ne ""} {
                             set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
                         }
-                        lappend constructorLocations [dict create name constructor start $constructorPositionStart end $constructorPositionEnd arguments $arguments]
+                        lappend constructorLocations [dict create name constructor start [dict get $commandNameToken start] size [dict get $commandNameToken size] arguments $arguments]
                     }
                     "oo::class" - "::oo::class" {
                         # class command name is second token
@@ -203,64 +206,71 @@ oo::class create TclParser {
                                     # class name is third argument
                                     set classNameToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
                                     if {$classNameToken ne ""} {
-                                        set className [my Extract [dict get $classNameToken start] [dict get $classNameToken size]]
-                                        set classPositionStart [my LineChar [dict get $classNameToken start]]
-                                        set classPositionEnd [my LineChar [expr {[dict get $classNameToken start] + [dict get $classNameToken size]}]]
                                         # class definition is fourth argument
                                         set classBodyToken [my GetSimpleWordToken [lindex $groupedTokens 3]]
+                                        set adjustedCommentLocations {}
                                         set adjustedConstructorLocations {}
                                         set adjustedMethodLocations {}
                                         puts "CLASS BODY TOKEN = $classBodyToken"
                                         if {$classBodyToken ne ""} {
-                                            set classBodyPositionStart [my LineChar [dict get $classBodyToken start]]
                                             set classBody [my Extract [dict get $classBodyToken start] [dict get $classBodyToken size]]
-                                            # If body is a bracd string, remove the braces and replace any back slashes in it.
+                                            # If body is a braced or double quoted string, remove the braces or double quotes and replace any back slashes in it.
                                             # That will cause the line number to be off.
                                             # TODO: adjust line numbers again
+                                            set bsPositions {}
                                             if {[string index $classBody 0] eq "\{"} {
                                                 set bd [tclp braces $script [dict get $classBodyToken start]]
                                                 set pb [my ConcatWithoutBS [dict get $bd tokens]]
-                                                set classBody $pb
+                                                set classBody [dict get $pb string]
+                                                set bsPositions [dict get $pb bsPositions]
+                                                # Increment body start by one because brace got strippped
+                                                set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
                                             } elseif {[string index $classBody 0] eq "\""} {
                                                 set bd [tclp quotedString $script [dict get $classBodyToken start]]
                                                 set pb [my ConcatWithoutBS [dict get $bd tokens]]
-                                                set classBody $pb
+                                                set classBody [dict get $pb string]
+                                                set bsPositions [dict get $pb bsPositions]
+                                                # Increment body start by one because double quote got strippped
+                                                set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
+                                            } else {
+                                                set classBodyStart [dict get $classBodyToken start]
                                             }
                                             # Now parse the body by calling the parser recursively
                                             set p [TclParser new script $classBody]
                                             $p analyse
                                             $p print stdout 3
+                                            puts "bsPositions=$bsPositions"
                                             # Get info from body
                                             foreach cl [$p cget commentLocations] {
                                                 lappend adjustedCommentLocations \
                                                     [dict create \
-                                                         start [dict create line [expr {[dict get $cl start line] + [dict get $classBodyPositionStart line]}] character [dict get $cl start character]] \
-                                                         end [dict create line [expr {[dict get $cl end line] + [dict get $classBodyPositionStart line]}] character [dict get $cl end character]]]
+                                                         start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
+                                                         size [dict get $cl size]]
                                             }
                                             foreach cl [$p cget constructorLocations] {
                                                 lappend adjustedConstructorLocations \
                                                     [dict create \
                                                          name constructor \
-                                                         start [dict create line [expr {[dict get $cl start line] + [dict get $classBodyPositionStart line]}] character [dict get $cl start character]] \
-                                                         end [dict create line [expr {[dict get $cl end line] + [dict get $classBodyPositionStart line]}] character [dict get $cl end character]] \
+                                                         start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
+                                                         size [dict get $cl size] \
                                                          arguments [dict get $cl arguments]]
                                             }
-                                            foreach ml [$p cget methodLocations] {
+                                            foreach cl [$p cget methodLocations] {
                                                 lappend adjustedMethodLocations \
-                                                    [dict create name \
-                                                         [dict get $ml name] \
-                                                         start [dict create line [expr {[dict get $ml start line] + [dict get $classBodyPositionStart line]}] character [dict get $ml start character]] \
-                                                         end [dict create line [expr {[dict get $ml end line] + [dict get $classBodyPositionStart line]}] character [dict get $ml end character]] \
-                                                         arguments [dict get $ml arguments]]
+                                                    [dict create \
+                                                         name [dict get $cl name] \
+                                                         start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
+                                                         size [dict get $cl size] \
+                                                         arguments [dict get $cl arguments]]
                                             }
                                             $p destroy
                                         }
                                         lappend commentLocations {*}$adjustedCommentLocations
                                         lappend classLocations \
                                             [dict create \
-                                                 name $className \
-                                                 start $classPositionStart \
-                                                 end $classPositionEnd \
+                                                 name [my Extract [dict get $classNameToken start] [dict get $classNameToken size]] \
+                                                 start [dict get $classNameToken start] \
+                                                 size [dict get $classNameToken size] \
                                                  constructors $adjustedConstructorLocations \
                                                  methods $adjustedMethodLocations]
                                     }
@@ -319,6 +329,7 @@ oo::class create TclParser {
         my ParseScript
     }
 
+    # Nicely print parser result
     method print {stream {lvl 0}} {
         puts "[string repeat ---- $lvl]TclParser:"
         puts "[string repeat ---- $lvl]  Comments"
@@ -331,8 +342,7 @@ oo::class create TclParser {
         }
         puts "[string repeat ---- $lvl]  Classes"
         foreach l $classLocations {
-            puts "[string repeat ---- $lvl]      [dict get $l name]"
-            puts "[string repeat ---- $lvl]      [dict get $l name]"
+            puts "[string repeat ---- $lvl]      [dict get $l name] start [dict get $l start] size [dict get $l size]"
             puts "[string repeat ---- $lvl]          Constructors:"
             foreach cl [dict get $l constructors] {
                 puts "[string repeat ---- $lvl]              $cl"
@@ -345,7 +355,12 @@ oo::class create TclParser {
     }
 }
 
-proc test {} {
+proc test {s d f} {
+    # test comment in a proc
+    dict create nm \
+        a b \
+        c d \
+        e f]
 }
 
 if {$TclParserStandAlone} {
