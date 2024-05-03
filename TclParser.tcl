@@ -140,7 +140,7 @@ oo::class create TclParser {
     }
 
     # Parse the script
-    method ParseScript {} {
+    method ParseScript {what} {
         set commandOffset 0
         while {$commandOffset < [string length $script]} {
             set d [tclp command $script $commandOffset]
@@ -158,127 +158,135 @@ oo::class create TclParser {
             if {$commandNameToken ne ""} {
                 set commandName [my Extract [dict get $commandNameToken start] [dict get $commandNameToken size]]
                 puts "commandName=$commandName"
-                switch -exact -- $commandName {
-                    "proc" - "::proc" {
-                        # Proc name is second token
-                        set procNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
-                        if {$procNameToken ne ""} {
-                            set procName [my Extract [dict get $procNameToken start] [dict get $procNameToken size]]
-                            # Proc arguments are in third token
-                            set arguments ""
-                            set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
-                            if {$argumentsToken ne ""} {
-                                set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
+                switch -exact -- $what {
+                    script {
+                        switch -exact -- $commandName {
+                            "proc" - "::proc" {
+                                # Proc name is second token
+                                set procNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
+                                if {$procNameToken ne ""} {
+                                    set procName [my Extract [dict get $procNameToken start] [dict get $procNameToken size]]
+                                    # Proc arguments are in third token
+                                    set arguments ""
+                                    set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
+                                    if {$argumentsToken ne ""} {
+                                        set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
+                                    }
+                                    lappend procLocations [dict create name $procName start [dict get $procNameToken start] size [dict get $procNameToken size] arguments $arguments]
+                                }
                             }
-                            lappend procLocations [dict create name $procName start [dict get $procNameToken start] size [dict get $procNameToken size] arguments $arguments]
-                        }
-                    }
-                    "method" - "::method" {
-                        # Method name is second token
-                        set methodNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
-                        if {$methodNameToken ne ""} {
-                            set methodName [my Extract [dict get $methodNameToken start] [dict get $methodNameToken size]]
-                            # Method arguments are in third token
-                            set arguments ""
-                            set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
-                            if {$argumentsToken ne ""} {
-                                set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
-                            }
-                            lappend methodLocations [dict create name $methodName start [dict get $methodNameToken start] size [dict get $methodNameToken size] arguments $arguments]
-                        }
-                    }
-                    "constructor" - "::constructor" {
-                        # Constructor arguments are in second token
-                        set arguments ""
-                        set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
-                        if {$argumentsToken ne ""} {
-                            set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
-                        }
-                        lappend constructorLocations [dict create name constructor start [dict get $commandNameToken start] size [dict get $commandNameToken size] arguments $arguments]
-                    }
-                    "oo::class" - "::oo::class" {
-                        # class command name is second token
-                        set classCommandNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
-                        if {$classCommandNameToken ne ""} {
-                            set classCommandName [my Extract [dict get $classCommandNameToken start] [dict get $classCommandNameToken size]]
-                            switch -exact -- $classCommandName {
-                                "create" {
-                                    # class name is third argument
-                                    set classNameToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
-                                    if {$classNameToken ne ""} {
-                                        # class definition is fourth argument
-                                        set classBodyToken [my GetSimpleWordToken [lindex $groupedTokens 3]]
-                                        set adjustedCommentLocations {}
-                                        set adjustedConstructorLocations {}
-                                        set adjustedMethodLocations {}
-                                        puts "CLASS BODY TOKEN = $classBodyToken"
-                                        if {$classBodyToken ne ""} {
-                                            set classBody [my Extract [dict get $classBodyToken start] [dict get $classBodyToken size]]
-                                            # If body is a braced or double quoted string, remove the braces or double quotes and replace any back slashes in it.
-                                            # That will cause the line number to be off.
-                                            # TODO: adjust line numbers again
-                                            set bsPositions {}
-                                            if {[string index $classBody 0] eq "\{"} {
-                                                set bd [tclp braces $script [dict get $classBodyToken start]]
-                                                set pb [my ConcatWithoutBS [dict get $bd tokens]]
-                                                set classBody [dict get $pb string]
-                                                set bsPositions [dict get $pb bsPositions]
-                                                # Increment body start by one because brace got strippped
-                                                set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
-                                            } elseif {[string index $classBody 0] eq "\""} {
-                                                set bd [tclp quotedString $script [dict get $classBodyToken start]]
-                                                set pb [my ConcatWithoutBS [dict get $bd tokens]]
-                                                set classBody [dict get $pb string]
-                                                set bsPositions [dict get $pb bsPositions]
-                                                # Increment body start by one because double quote got strippped
-                                                set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
-                                            } else {
-                                                set classBodyStart [dict get $classBodyToken start]
-                                            }
-                                            # Now parse the body by calling the parser recursively
-                                            set p [TclParser new script $classBody]
-                                            $p analyse
-                                            $p print stdout 3
-                                            puts "bsPositions=$bsPositions"
-                                            # Get info from body
-                                            foreach cl [$p cget commentLocations] {
-                                                lappend adjustedCommentLocations \
+                            "oo::class" - "::oo::class" {
+                                # class command name is second token
+                                set classCommandNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
+                                if {$classCommandNameToken ne ""} {
+                                    set classCommandName [my Extract [dict get $classCommandNameToken start] [dict get $classCommandNameToken size]]
+                                    switch -exact -- $classCommandName {
+                                        "create" {
+                                            # class name is third argument
+                                            set classNameToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
+                                            if {$classNameToken ne ""} {
+                                                # class definition is fourth argument
+                                                set classBodyToken [my GetSimpleWordToken [lindex $groupedTokens 3]]
+                                                set adjustedCommentLocations {}
+                                                set adjustedConstructorLocations {}
+                                                set adjustedMethodLocations {}
+                                                puts "CLASS BODY TOKEN = $classBodyToken"
+                                                if {$classBodyToken ne ""} {
+                                                    set classBody [my Extract [dict get $classBodyToken start] [dict get $classBodyToken size]]
+                                                    # If body is a braced or double quoted string, remove the braces or double quotes and replace any back slashes in it.
+                                                    # That will cause the line number to be off.
+                                                    # TODO: adjust line numbers again
+                                                    set bsPositions {}
+                                                    if {[string index $classBody 0] eq "\{"} {
+                                                        set bd [tclp braces $script [dict get $classBodyToken start]]
+                                                        set pb [my ConcatWithoutBS [dict get $bd tokens]]
+                                                        set classBody [dict get $pb string]
+                                                        set bsPositions [dict get $pb bsPositions]
+                                                        # Increment body start by one because brace got strippped
+                                                        set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
+                                                    } elseif {[string index $classBody 0] eq "\""} {
+                                                        set bd [tclp quotedString $script [dict get $classBodyToken start]]
+                                                        set pb [my ConcatWithoutBS [dict get $bd tokens]]
+                                                        set classBody [dict get $pb string]
+                                                        set bsPositions [dict get $pb bsPositions]
+                                                        # Increment body start by one because double quote got strippped
+                                                        set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
+                                                    } else {
+                                                        set classBodyStart [dict get $classBodyToken start]
+                                                    }
+                                                    # Now parse the body by calling the parser recursively
+                                                    set p [TclParser new script $classBody]
+                                                    $p analyse ooclassbody
+                                                    $p print stdout 3
+                                                    puts "bsPositions=$bsPositions"
+                                                    # Get info from body
+                                                    foreach cl [$p cget commentLocations] {
+                                                        lappend adjustedCommentLocations \
+                                                            [dict create \
+                                                                 start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
+                                                                 size [dict get $cl size]]
+                                                    }
+                                                    foreach cl [$p cget constructorLocations] {
+                                                        lappend adjustedConstructorLocations \
+                                                            [dict create \
+                                                                 name constructor \
+                                                                 start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
+                                                                 size [dict get $cl size] \
+                                                                 arguments [dict get $cl arguments]]
+                                                    }
+                                                    foreach cl [$p cget methodLocations] {
+                                                        lappend adjustedMethodLocations \
+                                                            [dict create \
+                                                                 name [dict get $cl name] \
+                                                                 start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
+                                                                 size [dict get $cl size] \
+                                                                 arguments [dict get $cl arguments]]
+                                                    }
+                                                    $p destroy
+                                                }
+                                                lappend commentLocations {*}$adjustedCommentLocations
+                                                lappend classLocations \
                                                     [dict create \
-                                                         start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
-                                                         size [dict get $cl size]]
+                                                         name [my Extract [dict get $classNameToken start] [dict get $classNameToken size]] \
+                                                         start [dict get $classNameToken start] \
+                                                         size [dict get $classNameToken size] \
+                                                         constructors $adjustedConstructorLocations \
+                                                         methods $adjustedMethodLocations]
                                             }
-                                            foreach cl [$p cget constructorLocations] {
-                                                lappend adjustedConstructorLocations \
-                                                    [dict create \
-                                                         name constructor \
-                                                         start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
-                                                         size [dict get $cl size] \
-                                                         arguments [dict get $cl arguments]]
-                                            }
-                                            foreach cl [$p cget methodLocations] {
-                                                lappend adjustedMethodLocations \
-                                                    [dict create \
-                                                         name [dict get $cl name] \
-                                                         start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
-                                                         size [dict get $cl size] \
-                                                         arguments [dict get $cl arguments]]
-                                            }
-                                            $p destroy
                                         }
-                                        lappend commentLocations {*}$adjustedCommentLocations
-                                        lappend classLocations \
-                                            [dict create \
-                                                 name [my Extract [dict get $classNameToken start] [dict get $classNameToken size]] \
-                                                 start [dict get $classNameToken start] \
-                                                 size [dict get $classNameToken size] \
-                                                 constructors $adjustedConstructorLocations \
-                                                 methods $adjustedMethodLocations]
                                     }
                                 }
                             }
+                            "namespace" - "::namespace" {
+                            }
                         }
                     }
-                    "namespace" - "::namespace" {
+                    ooclassbody {
+                        switch -exact -- $commandName {
+                            "method" - "::method" {
+                                # Method name is second token
+                                set methodNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
+                                if {$methodNameToken ne ""} {
+                                    set methodName [my Extract [dict get $methodNameToken start] [dict get $methodNameToken size]]
+                                    # Method arguments are in third token
+                                    set arguments ""
+                                    set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 2]]
+                                    if {$argumentsToken ne ""} {
+                                        set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
+                                    }
+                                    lappend methodLocations [dict create name $methodName start [dict get $methodNameToken start] size [dict get $methodNameToken size] arguments $arguments]
+                                }
+                            }
+                            "constructor" - "::constructor" {
+                                # Constructor arguments are in second token
+                                set arguments ""
+                                set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
+                                if {$argumentsToken ne ""} {
+                                    set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
+                                }
+                                lappend constructorLocations [dict create name constructor start [dict get $commandNameToken start] size [dict get $commandNameToken size] arguments $arguments]
+                            }
+                        }
                     }
                 }
             }
@@ -318,7 +326,7 @@ oo::class create TclParser {
         return [my getProcLocation $word]
    }
 
-    method analyse {} {
+    method analyse {{what script}} {
         set lineStarts {}
         set commentLocations {}
         set procLocations {}
@@ -326,7 +334,7 @@ oo::class create TclParser {
         set constructorLocations {}
         set methodLocations {}
         my LineCharInit
-        my ParseScript
+        my ParseScript $what
     }
 
     # Nicely print parser result
