@@ -205,21 +205,18 @@ oo::class create TclParser {
                                                     set classBody [my Extract [dict get $classBodyToken start] [dict get $classBodyToken size]]
                                                     # If body is a braced or double quoted string, remove the braces or double quotes and replace any back slashes in it.
                                                     # That will cause the line number to be off.
-                                                    # TODO: adjust line numbers again
                                                     set bsPositions {}
-                                                    if {[string index $classBody 0] eq "\{"} {
-                                                        set bd [tclp braces $script [dict get $classBodyToken start]]
+                                                    set classBodyStartChar [string index $classBody 0]
+                                                    if {$classBodyStartChar eq "\{" || $classBodyStartChar eq "\""} {
+                                                        if {$classBodyStartChar eq "\{"} {
+                                                            set bd [tclp braces $script [dict get $classBodyToken start]]
+                                                        } else {
+                                                            set bd [tclp quotedString $script [dict get $classBodyToken start]]
+                                                        }
                                                         set pb [my ConcatWithoutBS [dict get $bd tokens]]
                                                         set classBody [dict get $pb string]
                                                         set bsPositions [dict get $pb bsPositions]
                                                         # Increment body start by one because brace got strippped
-                                                        set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
-                                                    } elseif {[string index $classBody 0] eq "\""} {
-                                                        set bd [tclp quotedString $script [dict get $classBodyToken start]]
-                                                        set pb [my ConcatWithoutBS [dict get $bd tokens]]
-                                                        set classBody [dict get $pb string]
-                                                        set bsPositions [dict get $pb bsPositions]
-                                                        # Increment body start by one because double quote got strippped
                                                         set classBodyStart [expr {[dict get $classBodyToken start] + 1}]
                                                     } else {
                                                         set classBodyStart [dict get $classBodyToken start]
