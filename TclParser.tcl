@@ -15,6 +15,8 @@ oo::class create TclParser {
     variable procLocations
     variable classLocations
     variable constructorLocations
+    variable destructorLocations
+    variable memberVariableLocations
     variable methodLocations
 
     constructor {args} {
@@ -23,6 +25,8 @@ oo::class create TclParser {
         set procLocations {}
         set classLocations {}
         set constructorLocations {}
+        set destructorLocations {}
+        set memberVariableLocations {}
         set methodLocations {}
 	foreach {k v} $args {
 	    set $k $v
@@ -199,6 +203,8 @@ oo::class create TclParser {
                                                 set classBodyToken [my GetSimpleWordToken [lindex $groupedTokens 3]]
                                                 set adjustedCommentLocations {}
                                                 set adjustedConstructorLocations {}
+                                                set adjusteddestructorLocations {}
+                                                set adjustedMemberVariableLocations {}
                                                 set adjustedMethodLocations {}
                                                 puts "CLASS BODY TOKEN = $classBodyToken"
                                                 if {$classBodyToken ne ""} {
@@ -229,6 +235,8 @@ oo::class create TclParser {
                                                     # Get info from body and adjust line info for backslashes
                                                     set adjustedCommentLocations [my AdjustAllForBackslashTokens [$p cget commentLocations] $bsPositions $classBodyStart]
                                                     set adjustedConstructorLocations [my AdjustAllForBackslashTokens [$p cget constructorLocations] $bsPositions $classBodyStart]
+                                                    set adjustedDestructorLocations [my AdjustAllForBackslashTokens [$p cget destructorLocations] $bsPositions $classBodyStart]
+                                                    set adjustedMemberVariableLocations [my AdjustAllForBackslashTokens [$p cget memberVariableLocations] $bsPositions $classBodyStart]
                                                     set adjustedMethodLocations [my AdjustAllForBackslashTokens [$p cget methodLocations] $bsPositions $classBodyStart]
                                                     $p destroy
                                                 }
@@ -239,6 +247,8 @@ oo::class create TclParser {
                                                          start [dict get $classNameToken start] \
                                                          size [dict get $classNameToken size] \
                                                          constructors $adjustedConstructorLocations \
+                                                         destructors $adjustedDestructorLocations \
+                                                         memberVariables $adjustedMemberVariableLocations \
                                                          methods $adjustedMethodLocations]
                                             }
                                         }
@@ -251,7 +261,7 @@ oo::class create TclParser {
                     }
                     ooclassbody {
                         switch -exact -- $commandName {
-                            "method" - "::method" {
+                            "method" {
                                 # Method name is second token
                                 set methodNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
                                 if {$methodNameToken ne ""} {
@@ -265,7 +275,7 @@ oo::class create TclParser {
                                     lappend methodLocations [dict create name $methodName start [dict get $methodNameToken start] size [dict get $methodNameToken size] arguments $arguments]
                                 }
                             }
-                            "constructor" - "::constructor" {
+                            "constructor" {
                                 # Constructor arguments are in second token
                                 set arguments ""
                                 set argumentsToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
@@ -273,6 +283,18 @@ oo::class create TclParser {
                                     set arguments [my Extract [dict get $argumentsToken start] [dict get $argumentsToken size]]
                                 }
                                 lappend constructorLocations [dict create name constructor start [dict get $commandNameToken start] size [dict get $commandNameToken size] arguments $arguments]
+                            }
+                            "destructor" {
+                                # Destructor has no arguments
+                                lappend destructorLocations [dict create name destructor start [dict get $commandNameToken start] size [dict get $commandNameToken size]]
+                            }
+                            "variable" {
+                                # Variable name is second token
+                                set variableNameToken [my GetSimpleWordToken [lindex $groupedTokens 1]]
+                                if {$variableNameToken ne ""} {
+                                    set variableName [my Extract [dict get $variableNameToken start] [dict get $variableNameToken size]]
+                                    lappend memberVariableLocations [dict create name $variableName start [dict get $variableNameToken start] size [dict get $variableNameToken size]]
+                                }
                             }
                         }
                     }
@@ -320,6 +342,8 @@ oo::class create TclParser {
         set procLocations {}
         set classLocations {}
         set constructorLocations {}
+        set destructorLocations {}
+        set memberVariableLocations {}
         set methodLocations {}
         my LineCharInit
         my ParseScript $what
@@ -341,6 +365,14 @@ oo::class create TclParser {
             puts "[string repeat ---- $lvl]      [dict get $l name] @ [my LineChar [dict get $l start]]"
             puts "[string repeat ---- $lvl]          Constructors:"
             foreach cl [dict get $l constructors] {
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
+            }
+            puts "[string repeat ---- $lvl]          Destructors:"
+            foreach cl [dict get $l destructors] {
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
+            }
+            puts "[string repeat ---- $lvl]          Member variables:"
+            foreach cl [dict get $l memberVariables] {
                 puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
             }
             puts "[string repeat ---- $lvl]          Methods:"
