@@ -1,4 +1,4 @@
-set TclParserStandAlone 1
+set TclParserStandAlone [expr {$argv0 eq "TclParser.tcl"}]
 
 if {$TclParserStandAlone} {
     lappend auto_path [file dirname [info script]] [file join [file dirname [info script]] lib]
@@ -334,22 +334,22 @@ oo::class create TclParser {
         puts "[string repeat ---- $lvl]TclParser:"
         puts "[string repeat ---- $lvl]  Comments"
         foreach l $commentLocations {
-            puts "[string repeat ---- $lvl]      $l"
+            puts "[string repeat ---- $lvl]      @ [my LineChar [dict get $l start]]"
         }
         puts "[string repeat ---- $lvl]  Procs"
         foreach l $procLocations {
-            puts "[string repeat ---- $lvl]      $l"
+            puts "[string repeat ---- $lvl]      [dict get $l name] @ [my LineChar [dict get $l start]]"
         }
         puts "[string repeat ---- $lvl]  Classes"
         foreach l $classLocations {
-            puts "[string repeat ---- $lvl]      [dict get $l name] start [dict get $l start] size [dict get $l size]"
+            puts "[string repeat ---- $lvl]      [dict get $l name] @ [my LineChar [dict get $l start]]"
             puts "[string repeat ---- $lvl]          Constructors:"
             foreach cl [dict get $l constructors] {
-                puts "[string repeat ---- $lvl]              $cl"
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
             }
             puts "[string repeat ---- $lvl]          Methods:"
             foreach cl [dict get $l methods] {
-                puts "[string repeat ---- $lvl]              $cl"
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
             }
         }
     }
