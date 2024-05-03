@@ -110,15 +110,25 @@ oo::class create TclParser {
         return [dict create string $result bsPositions $bsl]
     }
 
-    # Adjust position when taking back slash tokens into account
-    method AdjustForBackslashTokens {start bsPositions} {
+    # Adjust start when taking back slash tokens into account
+    method AdjustForBackslashTokens {d bsPositions offset} {
+        set start [dict get $d start]
         set bsAdjustedStart $start
         foreach bsPosition $bsPositions {
             if {$start > [dict get $bsPosition offset]} {
                 incr bsAdjustedStart [dict get $bsPosition bsToken size]
             }
         }
-        return $bsAdjustedStart
+        return [dict set d start [expr {$bsAdjustedStart + $offset}]]
+    }
+
+    # Adjust start when taking back slash tokens into account
+    method AdjustAllForBackslashTokens {cll bsPositions offset} {
+        set result {}
+        foreach cl $cll {
+            lappend result [my AdjustForBackslashTokens $cl $bsPositions $offset]
+        }
+        return $result
     }
 
     # Look for SIMPLE_WORD + TEXT or TEXT or WORD
@@ -219,29 +229,10 @@ oo::class create TclParser {
                                                     $p analyse ooclassbody
                                                     $p print stdout 3
                                                     puts "bsPositions=$bsPositions"
-                                                    # Get info from body
-                                                    foreach cl [$p cget commentLocations] {
-                                                        lappend adjustedCommentLocations \
-                                                            [dict create \
-                                                                 start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
-                                                                 size [dict get $cl size]]
-                                                    }
-                                                    foreach cl [$p cget constructorLocations] {
-                                                        lappend adjustedConstructorLocations \
-                                                            [dict create \
-                                                                 name constructor \
-                                                                 start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
-                                                                 size [dict get $cl size] \
-                                                                 arguments [dict get $cl arguments]]
-                                                    }
-                                                    foreach cl [$p cget methodLocations] {
-                                                        lappend adjustedMethodLocations \
-                                                            [dict create \
-                                                                 name [dict get $cl name] \
-                                                                 start [expr {[my AdjustForBackslashTokens [dict get $cl start] $bsPositions] + $classBodyStart}] \
-                                                                 size [dict get $cl size] \
-                                                                 arguments [dict get $cl arguments]]
-                                                    }
+                                                    # Get info from body and adjust line info for backslashes
+                                                    set adjustedCommentLocations [my AdjustAllForBackslashTokens [$p cget commentLocations] $bsPositions $classBodyStart]
+                                                    set adjustedConstructorLocations [my AdjustAllForBackslashTokens [$p cget constructorLocations] $bsPositions $classBodyStart]
+                                                    set adjustedMethodLocations [my AdjustAllForBackslashTokens [$p cget methodLocations] $bsPositions $classBodyStart]
                                                     $p destroy
                                                 }
                                                 lappend commentLocations {*}$adjustedCommentLocations
