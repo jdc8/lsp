@@ -61,7 +61,7 @@ oo::class create TclParser {
     }
 
     # Convert offset within script into line number and charater offset within line
-    method LineChar {offset} {
+    method lineChar {offset} {
         set L 0
         foreach pos [lrange $lineStarts 1 end] {
             if {$offset < $pos} {
@@ -354,30 +354,30 @@ oo::class create TclParser {
         puts "[string repeat ---- $lvl]TclParser:"
         puts "[string repeat ---- $lvl]  Comments"
         foreach l $commentLocations {
-            puts "[string repeat ---- $lvl]      @ [my LineChar [dict get $l start]]"
+            puts "[string repeat ---- $lvl]      @ [my lineChar [dict get $l start]]"
         }
         puts "[string repeat ---- $lvl]  Procs"
         foreach l $procLocations {
-            puts "[string repeat ---- $lvl]      [dict get $l name] @ [my LineChar [dict get $l start]]"
+            puts "[string repeat ---- $lvl]      [dict get $l name] @ [my lineChar [dict get $l start]]"
         }
         puts "[string repeat ---- $lvl]  Classes"
         foreach l $classLocations {
-            puts "[string repeat ---- $lvl]      [dict get $l name] @ [my LineChar [dict get $l start]]"
+            puts "[string repeat ---- $lvl]      [dict get $l name] @ [my lineChar [dict get $l start]]"
             puts "[string repeat ---- $lvl]          Constructors:"
             foreach cl [dict get $l constructors] {
-                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my lineChar [dict get $cl start]]"
             }
             puts "[string repeat ---- $lvl]          Destructors:"
             foreach cl [dict get $l destructors] {
-                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my lineChar [dict get $cl start]]"
             }
             puts "[string repeat ---- $lvl]          Member variables:"
             foreach cl [dict get $l memberVariables] {
-                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my lineChar [dict get $cl start]]"
             }
             puts "[string repeat ---- $lvl]          Methods:"
             foreach cl [dict get $l methods] {
-                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my LineChar [dict get $cl start]]"
+                puts "[string repeat ---- $lvl]              [dict get $cl name] @ [my lineChar [dict get $cl start]]"
             }
         }
     }

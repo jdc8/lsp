@@ -13,7 +13,7 @@ namespace eval lsp_server {
     variable requestdata ""
     variable requestlength 0
     variable pendingrequests {}
-    variable debuglevel 1
+    variable debuglevel 10
     variable initialized 0
     set shuttingDown 0
 

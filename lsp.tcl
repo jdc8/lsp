@@ -17,7 +17,10 @@ proc didOpen {uri text} {
     }
     set urid [uri::split $uri]
     puts stderr "use $urid"
-    set textDocuments($uri) [TclParser new fileName [dict get $urid path]]
+    set f [open [dict get $urid path] r]
+    set script [read $f]
+    close $f
+    set textDocuments($uri) [TclParser new script $script]
     $textDocuments($uri) analyse
 }
 
@@ -41,11 +44,13 @@ proc definition {id uri line character} {
     if {[info exists textDocuments($uri)]} {
         set pd [$textDocuments($uri) getDefinition $line $character]
         if {[string length $pd]} {
-            return [dict create uri [uri::join scheme file path [$textDocuments($uri) cget fileName]] \
-                        startline [dict get $pd start line] \
-                        startcharacter [dict get $pd start character] \
-                        endline [dict get $pd end line] \
-                        endcharacter [dict get $pd end character]]
+            set startd [$textDocuments($uri) lineChar [dict get $pd start]]
+            set endd [$textDocuments($uri) lineChar [expr {[dict get $pd start] + [dict get $pd size]}]]
+            return [dict create uri $uri \
+                        startline [dict get $startd line] \
+                        startcharacter [dict get $startd character] \
+                        endline [dict get $endd line] \
+                        endcharacter [dict get $endd character]]
         } else {
             error "Could not find definition of '$word' at position $line.$character"
         }
@@ -59,7 +64,8 @@ proc hover {id uri line character} {
     if {[info exists textDocuments($uri)]} {
         set pd [$textDocuments($uri) getDefinition $line $character]
         if {[string length $pd]} {
-            set result "proc defined in [uri::join scheme file path [$textDocuments($uri) cget fileName]] at position [dict get $pd start line].[dict get $pd start character]"
+            set startd [$textDocuments($uri) lineChar [dict get $pd start]]
+            set result "proc defined in $uri at position [dict get $startd line].[dict get $startd character]"
             if {[dict get $pd arguments] ne ""} {
                 append result " with these arguments: [dict get $pd arguments]"
             }
